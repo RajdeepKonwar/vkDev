@@ -4,8 +4,12 @@
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3native.h>
 
-#include <algorithm>    // std::clamp
-#include <cstdint>      // uint32_t
+#include <glm/glm.hpp>
+
+#include <algorithm>
+#include <array>
+#include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -20,15 +24,15 @@
 
 #undef max  // Compile error for std::numeric_limits<uint32_t>::max()
 
-constexpr auto WIDTH  = 800;
-constexpr auto HEIGHT = 600;
-constexpr auto MAX_FRAMES_IN_FLIGHT = 2;
+constexpr auto k_Width  = 800;
+constexpr auto k_Height = 600;
+constexpr auto k_MaxFramesInFlight = 2;
 
-const std::vector<const char *> validationLayers = {
+const std::vector<const char *> k_ValidationLayers = {
     "VK_LAYER_KHRONOS_validation"
 };
 
-const std::vector<const char *> deviceExtensions = {
+const std::vector<const char *> k_DeviceExtensions = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME
 };
 
@@ -47,9 +51,60 @@ struct QueueFamilyIndices
 
 struct SwapChainSupportDetails
 {
-    VkSurfaceCapabilitiesKHR capabilities;      // Basic surface capabilities (min/max number of images in swap chain, min/max width and height of images)
+    VkSurfaceCapabilitiesKHR capabilities{};    // Basic surface capabilities (min/max number of images in swap chain, min/max width and height of images)
     std::vector<VkSurfaceFormatKHR> formats;    // Surface formats (pixel format, color space, color depth)
     std::vector<VkPresentModeKHR> presentModes; // Available presentation modes
+};
+
+struct Vertex
+{
+    glm::vec2 pos;
+    glm::vec3 color;
+
+    static VkVertexInputBindingDescription getBindingDescription()
+    {
+        // A vertex binding describes at which rate to load data from memory throughout the vertices.
+        // It specifies the number of bytes between data entries and whether to move to the next data entry after each vertex or after each instance.
+        VkVertexInputBindingDescription bindingDescription{};
+        bindingDescription.binding = 0; // All of our per-vertex data is packed together in one array, so we're only going to have one binding. Specifies the index of the binding in the array of bindings
+        bindingDescription.stride = sizeof(Vertex); // Specifies the number of bytes from one entry to the next
+        bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX; // Move to the next data entry after each vertex
+
+        return bindingDescription;
+    }
+
+    static std::array<VkVertexInputAttributeDescription, 2> getAttributeDescriptions()
+    {
+        // We have two attributes, position and color, so we need two attribute description structs
+        std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions{};
+        attributeDescriptions[0].binding = 0;   // tells Vulkan from which binding the per-vertex data comes
+        attributeDescriptions[0].location = 0;  // references the "location" directive of the input in the vertex shader
+        attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT;  // The input in the vertex shader with location 0 is the position, which has two 32-bit float components
+        attributeDescriptions[0].offset = offsetof(Vertex, pos);
+
+        /* Format translation from GLSL to Vulkan
+        * float:  VK_FORMAT_R32_SFLOAT
+        * vec2:   VK_FORMAT_R32G32_SFLOAT
+        * vec3:   VK_FORMAT_R32G32B32_SFLOAT
+        * vec4:   VK_FORMAT_R32G32B32A32_SFLOAT
+        * ivec2:  VK_FORMAT_R32G32_SINT
+        * uvec4:  VK_FORMAT_R32G32B32A32_UINT
+        * double: VK_FORMAT_R64_SFLOAT
+        */
+
+        attributeDescriptions[1].binding = 0;
+        attributeDescriptions[1].location = 1;
+        attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+        attributeDescriptions[1].offset = offsetof(Vertex, color);
+
+        return attributeDescriptions;
+    }
+};
+
+const std::vector<Vertex> k_Vertices = {
+    {{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+    {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
+    {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
 };
 
 #ifdef NDEBUG
@@ -78,7 +133,7 @@ static void DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMesse
         func(instance, debugMessenger, pAllocator);
 }
 
-class HelloTriangleApplication
+class vkDevApp
 {
 public:
     void run()
@@ -96,14 +151,14 @@ private:
 
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);   // Don't create an OpenGL context
 
-        m_window = glfwCreateWindow(WIDTH, HEIGHT, "vkDev", nullptr, nullptr);
+        m_window = glfwCreateWindow(k_Width, k_Height, "vkDev", nullptr, nullptr);
         glfwSetWindowUserPointer(m_window, this);
         glfwSetFramebufferSizeCallback(m_window, framebufferResizeCallback);
     }
 
     static void framebufferResizeCallback(GLFWwindow *window, int width, int height)
     {
-        auto app = reinterpret_cast<HelloTriangleApplication *>(glfwGetWindowUserPointer(window));
+        auto app = reinterpret_cast<vkDevApp *>(glfwGetWindowUserPointer(window));
         app->m_framebufferResized = true;
     }
 
@@ -120,6 +175,7 @@ private:
         createGraphicsPipeline();
         createFramebuffers();
         createCommandPool();
+        createVertexBuffer();
         createCommandBuffers();
         createSyncObjects();
     }
@@ -171,12 +227,15 @@ private:
     {
         cleanupSwapChain();
 
+        vkDestroyBuffer(m_device, m_vertexBuffer, nullptr);
+        vkFreeMemory(m_device, m_vertexBufferMemory, nullptr);
+
         vkDestroyPipeline(m_device, m_graphicsPipeline, nullptr);
         vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
 
         vkDestroyRenderPass(m_device, m_renderPass, nullptr);
 
-        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+        for (size_t i = 0; i < k_MaxFramesInFlight; i++)
         {
             vkDestroySemaphore(m_device, m_renderFinishedSemaphores[i], nullptr);
             vkDestroySemaphore(m_device, m_imageAvailableSemaphores[i], nullptr);
@@ -209,11 +268,11 @@ private:
         // (e.g. because it uses a well-known graphics engine with certain special behavior)
         VkApplicationInfo appInfo{};
         appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-        appInfo.pApplicationName = "Hello Triangle";
-        appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
+        appInfo.pApplicationName = "vkDev";
+        appInfo.applicationVersion = VK_API_VERSION_1_3;
         appInfo.pEngineName = "No Engine";
-        appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-        appInfo.apiVersion = VK_API_VERSION_1_0;
+        appInfo.engineVersion = VK_API_VERSION_1_3;
+        appInfo.apiVersion = VK_API_VERSION_1_3;
 
         // Not optional, tells the Vulkan driver which global extensions and validation layers we want to use
         // Global here means that they apply to the entire program and not a specific device
@@ -232,8 +291,8 @@ private:
         VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo{};
         if (enableValidationLayers)
         {
-            createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
-            createInfo.ppEnabledLayerNames = validationLayers.data();
+            createInfo.enabledLayerCount = static_cast<uint32_t>(k_ValidationLayers.size());
+            createInfo.ppEnabledLayerNames = k_ValidationLayers.data();
 
             populateDebugMessengerCreateInfo(debugCreateInfo);
             createInfo.pNext = (VkDebugUtilsMessengerCreateInfoEXT *)&debugCreateInfo;
@@ -362,13 +421,13 @@ private:
 
         // The enabledLayerCount and ppEnabledLayerNames fields of VkDeviceCreateInfo are ignored by up-to-date implementations
         // However, it is still a good idea to set them anyway to be compatible with older implementations
-        createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
-        createInfo.ppEnabledExtensionNames = deviceExtensions.data();
+        createInfo.enabledExtensionCount = static_cast<uint32_t>(k_DeviceExtensions.size());
+        createInfo.ppEnabledExtensionNames = k_DeviceExtensions.data();
 
         if (enableValidationLayers)
         {
-            createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
-            createInfo.ppEnabledLayerNames = validationLayers.data();
+            createInfo.enabledLayerCount = static_cast<uint32_t>(k_ValidationLayers.size());
+            createInfo.ppEnabledLayerNames = k_ValidationLayers.data();
         }
         else
             createInfo.enabledLayerCount = 0;
@@ -613,10 +672,14 @@ private:
         // Because we're hard coding the vertex data directly in the vertex shader, we'll fill in this structure to specify that there is no vertex data to load for now
         VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
         vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-        vertexInputInfo.vertexBindingDescriptionCount = 0;
-        vertexInputInfo.pVertexBindingDescriptions = nullptr; // Optional
-        vertexInputInfo.vertexAttributeDescriptionCount = 0;
-        vertexInputInfo.pVertexAttributeDescriptions = nullptr; // Optional
+
+        auto bindingDescription = Vertex::getBindingDescription();
+        auto attributeDescriptions = Vertex::getAttributeDescriptions();
+
+        vertexInputInfo.vertexBindingDescriptionCount = 1;
+        vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
+        vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
+        vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
 
         // --- Input assembly ---
         // VkPipelineInputAssemblyStateCreateInfo struct describes two things - what kind of geometry will be drawn from the vertices and if primitive restart should be enabled
@@ -808,10 +871,45 @@ private:
             throw std::runtime_error("Failed to create command pool!");
     }
 
+    void createVertexBuffer()
+    {
+        VkBufferCreateInfo bufferInfo{};
+        bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bufferInfo.size = sizeof(k_Vertices[0]) * k_Vertices.size();
+        bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+        if (vkCreateBuffer(m_device, &bufferInfo, nullptr, &m_vertexBuffer) != VK_SUCCESS)
+            throw std::runtime_error("Failed to create vertex buffer!");
+
+        VkMemoryRequirements memRequirements;
+        vkGetBufferMemoryRequirements(m_device, m_vertexBuffer, &memRequirements);
+
+        VkMemoryAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocInfo.allocationSize = memRequirements.size;
+        allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+        if (vkAllocateMemory(m_device, &allocInfo, nullptr, &m_vertexBufferMemory) != VK_SUCCESS)
+            throw std::runtime_error("Failed to allocate vertex buffer memory!");
+
+        // We can now associate this memory with the buffer
+        vkBindBufferMemory(m_device, m_vertexBuffer, m_vertexBufferMemory, 0);
+
+        // You can now simply memcpy the vertex data to the mapped memory and unmap it again using vkUnmapMemory
+        // Unfortunately the driver may not immediately copy the data into the buffer memory, for example because of caching
+        // It is also possible that writes to the buffer are not visible in the mapped memory yet
+        void *data = nullptr;
+        vkMapMemory(m_device, m_vertexBufferMemory, 0, bufferInfo.size, 0, &data);
+        memcpy(data, k_Vertices.data(), (size_t)bufferInfo.size);
+        vkUnmapMemory(m_device, m_vertexBufferMemory);
+        // The transfer of data to the GPU is an operation that happens in the background and the specification simply tells us that it is guaranteed to be complete as of the next call to vkQueueSubmit
+    }
+
     // Command buffers will be automatically freed when their command pool is destroyed, so we don't need explicit cleanup
     void createCommandBuffers()
     {
-        m_commandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
+        m_commandBuffers.resize(k_MaxFramesInFlight);
 
         VkCommandBufferAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -826,9 +924,9 @@ private:
 
     void createSyncObjects()
     {
-        m_imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
-        m_renderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
-        m_inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
+        m_imageAvailableSemaphores.resize(k_MaxFramesInFlight);
+        m_renderFinishedSemaphores.resize(k_MaxFramesInFlight);
+        m_inFlightFences.resize(k_MaxFramesInFlight);
 
         VkSemaphoreCreateInfo semaphoreInfo{};
         semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -839,7 +937,7 @@ private:
         // inFlightFence is only signaled after a frame has finished rendering, yet since this is the first frame, there are no previous frames in which to signal the fence!
         // Create the fence in the signaled state, so that the first call to vkWaitForFences() returns immediately since the fence is already signaled.
 
-        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+        for (size_t i = 0; i < k_MaxFramesInFlight; i++)
         {
             if (vkCreateSemaphore(m_device, &semaphoreInfo, nullptr, &m_imageAvailableSemaphores[i]) != VK_SUCCESS ||
                 vkCreateSemaphore(m_device, &semaphoreInfo, nullptr, &m_renderFinishedSemaphores[i]) != VK_SUCCESS ||
@@ -900,8 +998,12 @@ private:
         scissor.extent = m_swapChainExtent;
         vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
+        VkBuffer vertexBuffers[] = { m_vertexBuffer };
+        VkDeviceSize offsets[] = { 0 };
+        vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+
         // Issue the draw command for the triangle
-        vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+        vkCmdDraw(commandBuffer, static_cast<uint32_t>(k_Vertices.size()), 1, 0, 0);
         // vertexCount: Even though we don't have a vertex buffer, we technically still have 3 vertices to draw
         // instanceCount: Used for instanced rendering, use 1 if you're not doing that
         // firstVertex: Used as an offset into the vertex buffer, defines the lowest value of gl_VertexIndex
@@ -996,7 +1098,7 @@ private:
         else if (result != VK_SUCCESS)
             throw std::runtime_error("Failed to present swap chain image!");
 
-        m_currentFrame = (m_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+        m_currentFrame = (m_currentFrame + 1) % k_MaxFramesInFlight;
     }
 
     //////////////////////////////////////////////////////////////////////
@@ -1031,7 +1133,7 @@ private:
         std::vector<VkLayerProperties> availableLayers(layerCount);
         vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
 
-        for (const char *layerName : validationLayers)
+        for (const char *layerName : k_ValidationLayers)
         {
             bool layerFound = false;
 
@@ -1090,7 +1192,7 @@ private:
         std::vector<VkExtensionProperties> availableExtensions(extensionCount);
         vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, availableExtensions.data());
 
-        std::set<std::string> requiredExtensions(deviceExtensions.begin(), deviceExtensions.end());
+        std::set<std::string> requiredExtensions(k_DeviceExtensions.begin(), k_DeviceExtensions.end());
         for (const auto &extension : availableExtensions)
             requiredExtensions.erase(extension.extensionName);
 
@@ -1247,9 +1349,21 @@ private:
 
         VkShaderModule shaderModule;
         if (vkCreateShaderModule(m_device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS)
-            throw std::runtime_error("failed to create shader module!");
+            throw std::runtime_error("Failed to create shader module!");
 
         return shaderModule;
+    }
+
+    uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties)
+    {
+        VkPhysicalDeviceMemoryProperties memProperties;
+        vkGetPhysicalDeviceMemoryProperties(m_physicalDevice, &memProperties);
+
+        for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++)
+            if ((typeFilter & (1 << i)) != 0 && (memProperties.memoryTypes[i].propertyFlags & properties) == properties)
+                return i;
+
+        throw std::runtime_error("Failed to find suitable memory type!");
     }
 
     /* messageSeverity parameter specifies the severity of the message, which is one of the following flags:
@@ -1287,31 +1401,31 @@ private:
 private:
     // Setup
     GLFWwindow *m_window = nullptr;
-    VkInstance m_instance;
-    VkDebugUtilsMessengerEXT m_debugMessenger;
+    VkInstance m_instance = VK_NULL_HANDLE;
+    VkDebugUtilsMessengerEXT m_debugMessenger = VK_NULL_HANDLE;
     VkPhysicalDevice m_physicalDevice = VK_NULL_HANDLE;
-    VkDevice m_device;
-    VkQueue m_graphicsQueue;
+    VkDevice m_device = VK_NULL_HANDLE;
+    VkQueue m_graphicsQueue = VK_NULL_HANDLE;
 
     // Presentation
-    VkSurfaceKHR m_surface;
-    VkQueue m_presentQueue;
+    VkSurfaceKHR m_surface = VK_NULL_HANDLE;
+    VkQueue m_presentQueue = VK_NULL_HANDLE;
 
     // Swap chain
-    VkSwapchainKHR m_swapChain;
+    VkSwapchainKHR m_swapChain = VK_NULL_HANDLE;
     std::vector<VkImage> m_swapChainImages;
-    VkFormat m_swapChainImageFormat;
-    VkExtent2D m_swapChainExtent;
+    VkFormat m_swapChainImageFormat = VK_FORMAT_UNDEFINED;
+    VkExtent2D m_swapChainExtent{};
     std::vector<VkImageView> m_swapChainImageViews;
 
     // Pipeline
-    VkRenderPass m_renderPass;
-    VkPipelineLayout m_pipelineLayout;
-    VkPipeline m_graphicsPipeline;
+    VkRenderPass m_renderPass = VK_NULL_HANDLE;
+    VkPipelineLayout m_pipelineLayout = VK_NULL_HANDLE;
+    VkPipeline m_graphicsPipeline = VK_NULL_HANDLE;
 
     // Drawing
     std::vector<VkFramebuffer> m_swapChainFramebuffers;
-    VkCommandPool m_commandPool;
+    VkCommandPool m_commandPool = VK_NULL_HANDLE;
     std::vector<VkCommandBuffer> m_commandBuffers;
     std::vector < VkSemaphore> m_imageAvailableSemaphores;
     std::vector < VkSemaphore> m_renderFinishedSemaphores;
@@ -1319,11 +1433,14 @@ private:
     uint32_t m_currentFrame = 0;
 
     bool m_framebufferResized = false;
+
+    VkBuffer m_vertexBuffer;
+    VkDeviceMemory m_vertexBufferMemory;
 };
 
 int main()
 {
-    HelloTriangleApplication app;
+    vkDevApp app;
 
     try
     {
