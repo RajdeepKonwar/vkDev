@@ -102,9 +102,14 @@ struct Vertex
 };
 
 const std::vector<Vertex> k_Vertices = {
-    {{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-    {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-    {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},   // 0
+    {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},    // 1
+    {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},     // 2
+    {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}     // 3
+};
+
+const std::vector<uint32_t> k_Indices = {
+    0, 1, 2, 2, 3, 0
 };
 
 #ifdef NDEBUG
@@ -176,6 +181,7 @@ private:
         createFramebuffers();
         createCommandPool();
         createVertexBuffer();
+        createIndexBuffer();
         createCommandBuffers();
         createSyncObjects();
     }
@@ -226,6 +232,9 @@ private:
     void cleanup()
     {
         cleanupSwapChain();
+
+        vkDestroyBuffer(m_device, m_indexBuffer, nullptr);
+        vkFreeMemory(m_device, m_indexBufferMemory, nullptr);
 
         vkDestroyBuffer(m_device, m_vertexBuffer, nullptr);
         vkFreeMemory(m_device, m_vertexBufferMemory, nullptr);
@@ -961,6 +970,27 @@ private:
         vkFreeMemory(m_device, stagingBufferMemory, nullptr);
     }
 
+    void createIndexBuffer()
+    {
+        VkDeviceSize bufferSize = sizeof(k_Indices[0]) * k_Indices.size();
+
+        VkBuffer stagingBuffer;
+        VkDeviceMemory stagingBufferMemory;
+        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+
+        void* data;
+        vkMapMemory(m_device, stagingBufferMemory, 0, bufferSize, 0, &data);
+        memcpy(data, k_Indices.data(), (size_t)bufferSize);
+        vkUnmapMemory(m_device, stagingBufferMemory);
+
+        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_indexBuffer, m_indexBufferMemory);
+
+        copyBuffer(stagingBuffer, m_indexBuffer, bufferSize);
+
+        vkDestroyBuffer(m_device, stagingBuffer, nullptr);
+        vkFreeMemory(m_device, stagingBufferMemory, nullptr);
+    }
+
     // Command buffers will be automatically freed when their command pool is destroyed, so we don't need explicit cleanup
     void createCommandBuffers()
     {
@@ -1057,12 +1087,10 @@ private:
         VkDeviceSize offsets[] = { 0 };
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
 
-        // Issue the draw command for the triangle
-        vkCmdDraw(commandBuffer, static_cast<uint32_t>(k_Vertices.size()), 1, 0, 0);
-        // vertexCount: Even though we don't have a vertex buffer, we technically still have 3 vertices to draw
-        // instanceCount: Used for instanced rendering, use 1 if you're not doing that
-        // firstVertex: Used as an offset into the vertex buffer, defines the lowest value of gl_VertexIndex
-        // firstInstance: Used as an offset for instanced rendering, defines the lowest value of gl_InstanceIndex
+        vkCmdBindIndexBuffer(commandBuffer, m_indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+
+        //vkCmdDraw(commandBuffer, static_cast<uint32_t>(k_Vertices.size()), 1, 0, 0);
+        vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(k_Indices.size()), 1, 0, 0, 0);
 
         // --- Finishing up ---
         vkCmdEndRenderPass(commandBuffer);
@@ -1486,11 +1514,13 @@ private:
     std::vector < VkSemaphore> m_renderFinishedSemaphores;
     std::vector<VkFence> m_inFlightFences;
     uint32_t m_currentFrame = 0;
-
     bool m_framebufferResized = false;
 
+    // Buffers and memory
     VkBuffer m_vertexBuffer;
     VkDeviceMemory m_vertexBufferMemory;
+    VkBuffer m_indexBuffer;
+    VkDeviceMemory m_indexBufferMemory;
 };
 
 int main()
