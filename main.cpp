@@ -24,15 +24,15 @@
 
 #undef max  // Compile error for std::numeric_limits<uint32_t>::max()
 
-constexpr auto k_Width  = 800;
+constexpr auto k_Width = 800;
 constexpr auto k_Height = 600;
 constexpr auto k_MaxFramesInFlight = 2;
 
-const std::vector<const char *> k_ValidationLayers = {
+const std::vector<const char*> k_ValidationLayers = {
     "VK_LAYER_KHRONOS_validation"
 };
 
-const std::vector<const char *> k_DeviceExtensions = {
+const std::vector<const char*> k_DeviceExtensions = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME
 };
 
@@ -113,10 +113,10 @@ const bool enableValidationLayers = false;
 const bool enableValidationLayers = true;
 #endif
 
-static VkResult CreateDebugUtilsMessengerEXT(VkInstance instance,
-                                      const VkDebugUtilsMessengerCreateInfoEXT *pCreateInfo,
-                                      const VkAllocationCallbacks *pAllocator,
-                                      VkDebugUtilsMessengerEXT *pDebugMessenger)
+static VkResult CreateDebugUtilsMessengerEXT(VkInstance                                instance,
+                                             const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo,
+                                             const VkAllocationCallbacks*              pAllocator,
+                                             VkDebugUtilsMessengerEXT*                 pDebugMessenger)
 {
     // vkCreateDebugUtilsMessengerEXT call requires a valid instance to have been created
     auto func = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
@@ -126,7 +126,7 @@ static VkResult CreateDebugUtilsMessengerEXT(VkInstance instance,
         return VK_ERROR_EXTENSION_NOT_PRESENT;
 }
 
-static void DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT debugMessenger, const VkAllocationCallbacks *pAllocator)
+static void DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT debugMessenger, const VkAllocationCallbacks* pAllocator)
 {
     auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
     if (func != nullptr)
@@ -156,9 +156,9 @@ private:
         glfwSetFramebufferSizeCallback(m_window, framebufferResizeCallback);
     }
 
-    static void framebufferResizeCallback(GLFWwindow *window, int width, int height)
+    static void framebufferResizeCallback(GLFWwindow* window, int width, int height)
     {
-        auto app = reinterpret_cast<vkDevApp *>(glfwGetWindowUserPointer(window));
+        auto app = reinterpret_cast<vkDevApp*>(glfwGetWindowUserPointer(window));
         app->m_framebufferResized = true;
     }
 
@@ -295,7 +295,7 @@ private:
             createInfo.ppEnabledLayerNames = k_ValidationLayers.data();
 
             populateDebugMessengerCreateInfo(debugCreateInfo);
-            createInfo.pNext = (VkDebugUtilsMessengerCreateInfoEXT *)&debugCreateInfo;
+            createInfo.pNext = (VkDebugUtilsMessengerCreateInfoEXT*)&debugCreateInfo;
         }
         else
         {
@@ -376,7 +376,7 @@ private:
 
         std::vector<VkPhysicalDevice> devices(deviceCount);
         vkEnumeratePhysicalDevices(m_instance, &deviceCount, devices.data());
-        for (const auto &device : devices)
+        for (const auto& device : devices)
         {
             if (isDeviceSuitable(device))
             {
@@ -437,7 +437,7 @@ private:
 
         // Because we're only creating a single queue from this family, we'll simply use index 0
         vkGetDeviceQueue(m_device, indices.graphicsFamily.value(), 0, &m_graphicsQueue);
-        vkGetDeviceQueue(m_device, indices.presentFamily.value(),  0, &m_presentQueue);
+        vkGetDeviceQueue(m_device, indices.presentFamily.value(), 0, &m_presentQueue);
     }
 
     // Vulkan does not have the concept of a "default framebuffer", hence it requires an infrastructure that will own the buffers we will render to before we visualize them on the screen.
@@ -502,7 +502,7 @@ private:
 
         createInfo.presentMode = presentMode;
         createInfo.clipped = VK_TRUE;   // If the clipped member is set to VK_TRUE then that means that we don't care about the color of pixels that are obscured,
-                                        // for example because another window is in front of them.
+        // for example because another window is in front of them.
         createInfo.oldSwapchain = VK_NULL_HANDLE;
 
         if (vkCreateSwapchainKHR(m_device, &createInfo, nullptr, &m_swapChain) != VK_SUCCESS)
@@ -693,7 +693,7 @@ private:
         VkViewport viewport{};
         viewport.x = 0.0f;
         viewport.y = 0.0f;
-        viewport.width  = static_cast<float>(m_swapChainExtent.width);
+        viewport.width = static_cast<float>(m_swapChainExtent.width);
         viewport.height = static_cast<float>(m_swapChainExtent.height);
         viewport.minDepth = 0.0f;
         viewport.maxDepth = 1.0f;
@@ -864,46 +864,101 @@ private:
         VkCommandPoolCreateInfo poolInfo{};
         poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
         poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;   // Allow command buffers to be rerecorded individually, without this flag they all have to be reset together.
-                                                                            // We will be recording a command buffer every frame, so we want to be able to reset and rerecord over it.
+        // We will be recording a command buffer every frame, so we want to be able to reset and rerecord over it.
         poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value();
 
         if (vkCreateCommandPool(m_device, &poolInfo, nullptr, &m_commandPool) != VK_SUCCESS)
             throw std::runtime_error("Failed to create command pool!");
     }
 
-    void createVertexBuffer()
+    void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory)
     {
         VkBufferCreateInfo bufferInfo{};
         bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        bufferInfo.size = sizeof(k_Vertices[0]) * k_Vertices.size();
-        bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+        bufferInfo.size = size;
+        bufferInfo.usage = usage;
         bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-        if (vkCreateBuffer(m_device, &bufferInfo, nullptr, &m_vertexBuffer) != VK_SUCCESS)
-            throw std::runtime_error("Failed to create vertex buffer!");
+        if (vkCreateBuffer(m_device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS)
+            throw std::runtime_error("Failed to create buffer!");
 
         VkMemoryRequirements memRequirements;
-        vkGetBufferMemoryRequirements(m_device, m_vertexBuffer, &memRequirements);
+        vkGetBufferMemoryRequirements(m_device, buffer, &memRequirements);
 
         VkMemoryAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
         allocInfo.allocationSize = memRequirements.size;
-        allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties);
 
-        if (vkAllocateMemory(m_device, &allocInfo, nullptr, &m_vertexBufferMemory) != VK_SUCCESS)
-            throw std::runtime_error("Failed to allocate vertex buffer memory!");
+        if (vkAllocateMemory(m_device, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS)
+            throw std::runtime_error("Failed to allocate buffer memory!");
 
-        // We can now associate this memory with the buffer
-        vkBindBufferMemory(m_device, m_vertexBuffer, m_vertexBufferMemory, 0);
+        vkBindBufferMemory(m_device, buffer, bufferMemory, 0);
+    }
+
+    void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size)
+    {
+        VkCommandBufferAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocInfo.commandPool = m_commandPool;
+        allocInfo.commandBufferCount = 1;
+
+        VkCommandBuffer commandBuffer;
+        vkAllocateCommandBuffers(m_device, &allocInfo, &commandBuffer);
+
+        VkCommandBufferBeginInfo beginInfo{};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;  // We're only going to use the command buffer once and wait with returning from the function until the copy operation has finished executing
+
+        vkBeginCommandBuffer(commandBuffer, &beginInfo);
+
+        VkBufferCopy copyRegion{};
+        copyRegion.srcOffset = 0; // Optional
+        copyRegion.dstOffset = 0; // Optional
+        copyRegion.size = size;
+        vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
+
+        vkEndCommandBuffer(commandBuffer);
+
+        VkSubmitInfo submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &commandBuffer;
+
+        vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
+        vkQueueWaitIdle(m_graphicsQueue);
+
+        vkFreeCommandBuffers(m_device, m_commandPool, 1, &commandBuffer);
+    }
+
+    void createVertexBuffer()
+    {
+        VkDeviceSize bufferSize = sizeof(k_Vertices[0]) * k_Vertices.size();
+
+        // Use a host visible buffer as temporary buffer
+        VkBuffer stagingBuffer;
+        VkDeviceMemory stagingBufferMemory;
+        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+        // VK_BUFFER_USAGE_TRANSFER_SRC_BIT: Buffer can be used as source in a memory transfer operation
 
         // You can now simply memcpy the vertex data to the mapped memory and unmap it again using vkUnmapMemory
         // Unfortunately the driver may not immediately copy the data into the buffer memory, for example because of caching
         // It is also possible that writes to the buffer are not visible in the mapped memory yet
-        void *data = nullptr;
-        vkMapMemory(m_device, m_vertexBufferMemory, 0, bufferInfo.size, 0, &data);
-        memcpy(data, k_Vertices.data(), (size_t)bufferInfo.size);
-        vkUnmapMemory(m_device, m_vertexBufferMemory);
+        void* data = nullptr;
+        vkMapMemory(m_device, stagingBufferMemory, 0, bufferSize, 0, &data);
+        memcpy(data, k_Vertices.data(), (size_t)bufferSize);
+        vkUnmapMemory(m_device, stagingBufferMemory);
         // The transfer of data to the GPU is an operation that happens in the background and the specification simply tells us that it is guaranteed to be complete as of the next call to vkQueueSubmit
+
+        // Use a device local one as actual vertex buffer
+        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_vertexBuffer, m_vertexBufferMemory);
+        // VK_BUFFER_USAGE_TRANSFER_DST_BIT: Buffer can be used as destination in a memory transfer operation
+
+        copyBuffer(stagingBuffer, m_vertexBuffer, bufferSize);
+
+        vkDestroyBuffer(m_device, stagingBuffer, nullptr);
+        vkFreeMemory(m_device, stagingBufferMemory, nullptr);
     }
 
     // Command buffers will be automatically freed when their command pool is destroyed, so we don't need explicit cleanup
@@ -915,7 +970,7 @@ private:
         allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
         allocInfo.commandPool = m_commandPool;
         allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;  // Can be submitted to a queue for execution, but cannot be called from other command buffers.
-                                                            // VK_COMMAND_BUFFER_LEVEL_SECONDARY: Cannot be submitted directly, but can be called from primary command buffers.
+        // VK_COMMAND_BUFFER_LEVEL_SECONDARY: Cannot be submitted directly, but can be called from primary command buffers.
         allocInfo.commandBufferCount = (uint32_t)m_commandBuffers.size();
 
         if (vkAllocateCommandBuffers(m_device, &allocInfo, m_commandBuffers.data()) != VK_SUCCESS)
@@ -1104,7 +1159,7 @@ private:
     //////////////////////////////////////////////////////////////////////
     //                          Helper functions                        //
     //////////////////////////////////////////////////////////////////////
-    void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT &createInfo)
+    void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo)
     {
         createInfo = {};
         createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
@@ -1133,11 +1188,11 @@ private:
         std::vector<VkLayerProperties> availableLayers(layerCount);
         vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
 
-        for (const char *layerName : k_ValidationLayers)
+        for (const char* layerName : k_ValidationLayers)
         {
             bool layerFound = false;
 
-            for (const auto &layerProperties : availableLayers)
+            for (const auto& layerProperties : availableLayers)
             {
                 if (strcmp(layerName, layerProperties.layerName) == 0)
                 {
@@ -1154,14 +1209,14 @@ private:
     }
 
     // Return the required list of extensions based on whether validation layers are enabled or not
-    std::vector<const char *> getRequiredExtensions()
+    std::vector<const char*> getRequiredExtensions()
     {
         // GLFW has a handy built-in function that returns the extension(s) it needs to do that which we can pass to the struct
         uint32_t glfwExtensionCount = 0;
-        const char **glfwExtensions;
+        const char** glfwExtensions;
         glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
 
-        std::vector<const char *> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
+        std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
         if (enableValidationLayers)
             extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 
@@ -1193,7 +1248,7 @@ private:
         vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, availableExtensions.data());
 
         std::set<std::string> requiredExtensions(k_DeviceExtensions.begin(), k_DeviceExtensions.end());
-        for (const auto &extension : availableExtensions)
+        for (const auto& extension : availableExtensions)
             requiredExtensions.erase(extension.extensionName);
 
         return requiredExtensions.empty();
@@ -1210,7 +1265,7 @@ private:
         vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
 
         int i = 0;
-        for (const auto &queueFamily : queueFamilies)
+        for (const auto& queueFamily : queueFamilies)
         {
             if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)
                 indices.graphicsFamily = i;
@@ -1264,9 +1319,9 @@ private:
         - Presentation mode (conditions for "swapping" images to the screen)
         - Swap extent (resolution of images in swap chain)
     */
-    VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &availableFormats)
+    VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats)
     {
-        for (const auto &availableFormat : availableFormats)
+        for (const auto& availableFormat : availableFormats)
             if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB && availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
                 return availableFormat;
 
@@ -1287,9 +1342,9 @@ private:
         Only the VK_PRESENT_MODE_FIFO_KHR mode is guaranteed to be available.
         VK_PRESENT_MODE_MAILBOX_KHR is a very nice trade-off if energy usage is not a concern.
     */
-    VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR> &availablePresentModes)
+    VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes)
     {
-        for (const auto &availablePresentMode : availablePresentModes)
+        for (const auto& availablePresentMode : availablePresentModes)
             if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR)
                 return availablePresentMode;
 
@@ -1297,7 +1352,7 @@ private:
     }
 
     // Swap extent is the resolution of the swap chain images and it's almost always exactly equal to the resolution of the window that we're drawing to in pixels
-    VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR &capabilities)
+    VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities)
     {
         if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max())
         {
@@ -1314,14 +1369,14 @@ private:
             };
 
             // The clamp function is used here to bound the values of width and height between the allowed minimum andmaximum extents that are supported by the implementation
-            actualExtent.width  = std::clamp(actualExtent.width,  capabilities.minImageExtent.width,  capabilities.maxImageExtent.width);
+            actualExtent.width = std::clamp(actualExtent.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
             actualExtent.height = std::clamp(actualExtent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
 
             return actualExtent;
         }
     }
 
-    static std::vector<char> readFile(const std::string &filename)
+    static std::vector<char> readFile(const std::string& filename)
     {
         std::ifstream file(filename, std::ios::ate | std::ios::binary);
         if (!file.is_open())
@@ -1340,12 +1395,12 @@ private:
         return buffer;
     }
 
-    VkShaderModule createShaderModule(const std::vector<char> &code)
+    VkShaderModule createShaderModule(const std::vector<char>& code)
     {
         VkShaderModuleCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
         createInfo.codeSize = code.size();
-        createInfo.pCode = reinterpret_cast<const uint32_t *>(code.data());
+        createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
 
         VkShaderModule shaderModule;
         if (vkCreateShaderModule(m_device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS)
@@ -1371,23 +1426,23 @@ private:
         - VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:    Informational message like the creation of a resource
         - VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT: Message about behavior that is not necessarily an error, but very likely a bug in your application
         - VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:   Message about behavior that is invalid and may cause crashes
-    
+
        messageType parameter can have the following values:
         - VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT:     Some event has happened that is unrelated to the specification or performance
         - VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT:  Something has happened that violates the specification or indicates a possible mistake
         - VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT: Potential non-optimal use of Vulkan
-     
+
        pCallbackData parameter refers to a struct containing the details of the message itself, with the most important members being:
         - pMessage:    The debug message as a null-terminated string
         - pObjects:    Array of Vulkan object handles related to the message
         - objectCount: Number of objects in array
-     
+
        pUserData parameter contains a pointer that was specified during the setup of the callback and allows you to pass your own data to it
     */
-    static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-                                                        VkDebugUtilsMessageTypeFlagsEXT messageType,
-                                                        const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
-                                                        void *pUserData)
+    static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT      messageSeverity,
+                                                        VkDebugUtilsMessageTypeFlagsEXT             messageType,
+                                                        const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+                                                        void*                                       pUserData)
     {
         std::cerr << "Validation layer: " << pCallbackData->pMessage << "\n";
 
@@ -1400,7 +1455,7 @@ private:
 
 private:
     // Setup
-    GLFWwindow *m_window = nullptr;
+    GLFWwindow* m_window = nullptr;
     VkInstance m_instance = VK_NULL_HANDLE;
     VkDebugUtilsMessengerEXT m_debugMessenger = VK_NULL_HANDLE;
     VkPhysicalDevice m_physicalDevice = VK_NULL_HANDLE;
@@ -1446,7 +1501,7 @@ int main()
     {
         app.run();
     }
-    catch (const std::exception &e)
+    catch (const std::exception& e)
     {
         std::cerr << e.what() << std::endl;
         return EXIT_FAILURE;
