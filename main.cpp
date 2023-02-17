@@ -8,9 +8,14 @@
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE // configure it to use the Vulkan range of 0.0 to 1.0
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/hash.hpp>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
+
+#define TINYOBJLOADER_IMPLEMENTATION
+#include <tiny_obj_loader.h>
 
 #include <algorithm>
 #include <array>
@@ -27,21 +32,10 @@
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #undef max  // Compile error for std::numeric_limits<uint32_t>::max()
-
-constexpr auto k_Width = 800;
-constexpr auto k_Height = 600;
-constexpr auto k_MaxFramesInFlight = 2;
-
-const std::vector<const char*> k_ValidationLayers = {
-    "VK_LAYER_KHRONOS_validation"
-};
-
-const std::vector<const char*> k_DeviceExtensions = {
-    VK_KHR_SWAPCHAIN_EXTENSION_NAME
-};
 
 struct QueueFamilyIndices
 {
@@ -111,24 +105,22 @@ struct Vertex
 
         return attributeDescriptions;
     }
+
+    bool operator==(const Vertex& other) const
+    {
+        return pos == other.pos && color == other.color && texCoord == other.texCoord;
+    }
 };
 
-const std::vector<Vertex> k_Vertices = {
-    {{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-    {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-    {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-    {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
-
-    {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-    {{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-    {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-    {{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}}
-};
-
-const std::vector<uint32_t> k_Indices = {
-    0, 1, 2, 2, 3, 0,
-    4, 5, 6, 6, 7, 4
-};
+namespace std {
+    template<> struct hash<Vertex> {
+        size_t operator()(Vertex const& vertex) const {
+            return ((hash<glm::vec3>()(vertex.pos) ^
+                (hash<glm::vec3>()(vertex.color) << 1)) >> 1) ^
+                (hash<glm::vec2>()(vertex.texCoord) << 1);
+        }
+    };
+}
 
 struct UniformBufferObject
 {
@@ -137,11 +129,30 @@ struct UniformBufferObject
     alignas(16) glm::mat4 proj;
 };
 
+namespace {
+
+constexpr auto k_Width = 800;
+constexpr auto k_Height = 600;
+constexpr auto k_MaxFramesInFlight = 2;
+
+const std::string k_ModelPath = "models/viking_room.obj";
+const std::string k_TexturePath = "textures/viking_room.png";
+
+const std::vector<const char*> k_ValidationLayers = {
+    "VK_LAYER_KHRONOS_validation"
+};
+
+const std::vector<const char*> k_DeviceExtensions = {
+    VK_KHR_SWAPCHAIN_EXTENSION_NAME
+};
+
 #ifdef NDEBUG
-const bool enableValidationLayers = false;
+const bool k_EnableValidationLayers = false;
 #else
-const bool enableValidationLayers = true;
+const bool k_EnableValidationLayers = true;
 #endif
+
+} // namespace
 
 static VkResult CreateDebugUtilsMessengerEXT(VkInstance                                instance,
                                              const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo,
@@ -210,6 +221,7 @@ private:
         createTextureImage();
         createTextureImageView();
         createTextureSampler();
+        loadModel();
         createVertexBuffer();
         createIndexBuffer();
         createUniformBuffers();
@@ -308,7 +320,7 @@ private:
         vkDestroyDevice(m_device, nullptr);
 
         // vkDestroyDebugUtilsMessengerEXT must be called before the instance is destroyed
-        if (enableValidationLayers)
+        if (k_EnableValidationLayers)
             DestroyDebugUtilsMessengerEXT(m_instance, m_debugMessenger, nullptr);
 
         // Make sure that the surface is destroyed before the instance
@@ -322,7 +334,7 @@ private:
 
     void createInstance()
     {
-        if (enableValidationLayers && !checkValidationLayerSupport())
+        if (k_EnableValidationLayers && !checkValidationLayerSupport())
             throw std::runtime_error("Validation layers requested, but not available!");
 
         // Technically optional, but it may provide some useful information to the driver in order to optimize our specific application
@@ -350,7 +362,7 @@ private:
         // The last two members of the struct determine the global validation layers to enable
         // The debugCreateInfo variable is placed outside the if statement to ensure that it is not destroyed before the vkCreateInstance call
         VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo{};
-        if (enableValidationLayers)
+        if (k_EnableValidationLayers)
         {
             createInfo.enabledLayerCount = static_cast<uint32_t>(k_ValidationLayers.size());
             createInfo.ppEnabledLayerNames = k_ValidationLayers.data();
@@ -395,7 +407,7 @@ private:
 
     void setupDebugMessenger()
     {
-        if (!enableValidationLayers)
+        if (!k_EnableValidationLayers)
             return;
 
         VkDebugUtilsMessengerCreateInfoEXT createInfo;
@@ -484,7 +496,7 @@ private:
         createInfo.enabledExtensionCount = static_cast<uint32_t>(k_DeviceExtensions.size());
         createInfo.ppEnabledExtensionNames = k_DeviceExtensions.data();
 
-        if (enableValidationLayers)
+        if (k_EnableValidationLayers)
         {
             createInfo.enabledLayerCount = static_cast<uint32_t>(k_ValidationLayers.size());
             createInfo.ppEnabledLayerNames = k_ValidationLayers.data();
@@ -1158,7 +1170,7 @@ private:
     void createTextureImage()
     {
         int texWidth, texHeight, texChannels;
-        stbi_uc* pixels = stbi_load("textures/statue.jpg", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+        stbi_uc* pixels = stbi_load(k_TexturePath.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
         if (!pixels)
             throw std::runtime_error("Failed to load texture image!");
 
@@ -1236,9 +1248,49 @@ private:
             throw std::runtime_error("failed to create texture sampler!");
     }
 
+    void loadModel()
+    {
+        tinyobj::attrib_t attrib;
+        std::vector<tinyobj::shape_t> shapes;
+        std::vector<tinyobj::material_t> materials;
+        std::string warn, err;
+
+        if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, k_ModelPath.c_str()))
+            throw std::runtime_error(warn + err);
+
+        std::unordered_map<Vertex, uint32_t> uniqueVertices{};
+
+        for (const auto& shape : shapes)
+        {
+            for (const auto& index : shape.mesh.indices)
+            {
+                Vertex vertex{};
+                vertex.pos = {
+                    attrib.vertices[3 * index.vertex_index + 0],
+                    attrib.vertices[3 * index.vertex_index + 1],
+                    attrib.vertices[3 * index.vertex_index + 2]
+                };
+
+                vertex.texCoord = {
+                    attrib.texcoords[2 * index.texcoord_index + 0],
+                    1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
+                };
+
+                vertex.color = { 1.0f, 1.0f, 1.0f };
+
+                if (uniqueVertices.count(vertex) == 0) {
+                    uniqueVertices[vertex] = static_cast<uint32_t>(m_vertices.size());
+                    m_vertices.push_back(vertex);
+                }
+
+                m_indices.push_back(uniqueVertices[vertex]);
+            }
+        }
+    }
+
     void createVertexBuffer()
     {
-        VkDeviceSize bufferSize = sizeof(k_Vertices[0]) * k_Vertices.size();
+        VkDeviceSize bufferSize = sizeof(m_vertices[0]) * m_vertices.size();
 
         // Use a host visible buffer as temporary buffer
         VkBuffer stagingBuffer;
@@ -1251,7 +1303,7 @@ private:
         // It is also possible that writes to the buffer are not visible in the mapped memory yet
         void* data = nullptr;
         vkMapMemory(m_device, stagingBufferMemory, 0, bufferSize, 0, &data);
-        memcpy(data, k_Vertices.data(), (size_t)bufferSize);
+        memcpy(data, m_vertices.data(), (size_t)bufferSize);
         vkUnmapMemory(m_device, stagingBufferMemory);
         // The transfer of data to the GPU is an operation that happens in the background and the specification simply tells us that it is guaranteed to be complete as of the next call to vkQueueSubmit
 
@@ -1267,7 +1319,7 @@ private:
 
     void createIndexBuffer()
     {
-        VkDeviceSize bufferSize = sizeof(k_Indices[0]) * k_Indices.size();
+        VkDeviceSize bufferSize = sizeof(m_indices[0]) * m_indices.size();
 
         VkBuffer stagingBuffer;
         VkDeviceMemory stagingBufferMemory;
@@ -1275,7 +1327,7 @@ private:
 
         void* data;
         vkMapMemory(m_device, stagingBufferMemory, 0, bufferSize, 0, &data);
-        memcpy(data, k_Indices.data(), (size_t)bufferSize);
+        memcpy(data, m_indices.data(), (size_t)bufferSize);
         vkUnmapMemory(m_device, stagingBufferMemory);
 
         createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_indexBuffer, m_indexBufferMemory);
@@ -1468,8 +1520,8 @@ private:
 
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &m_descriptorSets[m_currentFrame], 0, nullptr);
 
-        //vkCmdDraw(commandBuffer, static_cast<uint32_t>(k_Vertices.size()), 1, 0, 0);
-        vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(k_Indices.size()), 1, 0, 0, 0);
+        //vkCmdDraw(commandBuffer, static_cast<uint32_t>(m_vertices.size()), 1, 0, 0);
+        vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(m_indices.size()), 1, 0, 0, 0);
 
         // --- Finishing up ---
         vkCmdEndRenderPass(commandBuffer);
@@ -1626,7 +1678,7 @@ private:
         glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
 
         std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
-        if (enableValidationLayers)
+        if (k_EnableValidationLayers)
             extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 
         return extensions;
@@ -1970,6 +2022,10 @@ private:
     VkImage m_depthImage;
     VkDeviceMemory m_depthImageMemory;
     VkImageView m_depthImageView;
+
+    // Model
+    std::vector<Vertex> m_vertices;
+    std::vector<uint32_t> m_indices;
 };
 
 int main()
